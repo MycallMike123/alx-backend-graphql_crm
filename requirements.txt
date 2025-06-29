@@ -1,2 +1,4 @@
 graphene-django
 django-filter
+Django
+djangorestframework
