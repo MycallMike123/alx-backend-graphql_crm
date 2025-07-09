@@ -1,8 +1,7 @@
 import re
-from time import timezone
-
-
+from datetime import datetime, timedelta
 import graphene
+from graphene_django import DjangoObjectType
 from graphene_django.filter import DjangoFilterConnectionField
 from rest_framework import status
 
@@ -10,8 +9,8 @@ from .models import Customer, Product, Order
 from .types import CustomerType, BulkCustomerInput, ProductType, OrderType
 from .filters import CustomerFilter, ProductFilter, OrderFilter
 
+# -------------------- Mutations --------------------
 
-#  Mutations
 class CreateCustomer(graphene.Mutation):
     class Arguments:
         name = graphene.String(required=True)
@@ -25,14 +24,11 @@ class CreateCustomer(graphene.Mutation):
         if Customer.objects.filter(email=email).exists():
             raise Exception("Email already in use")
 
-        if phone not in re.match(r"^(\+?\d{10,15}|\d{3}-\d{3}-\d{4})$", phone):
+        if phone and not re.match(r"^(\+?\d{10,15}|\d{3}-\d{3}-\d{4})$", phone):
             raise Exception("Invalid phone number")
-        customer = Customer.objects.create(name=name, email=email, phone=phone or "")
 
-        return CreateCustomer(
-            customer=customer,
-            message="Created successfully",
-        )
+        customer = Customer.objects.create(name=name, email=email, phone=phone or "")
+        return CreateCustomer(customer=customer, message="Created successfully")
 
 
 class CreateCustomers(graphene.Mutation):
@@ -57,7 +53,7 @@ class CreateCustomers(graphene.Mutation):
                 created.append(Customer.objects.create(**customer))
             except Exception as e:
                 errors.append(str(e))
-            return CreateCustomers(success=created, errors=errors)
+        return CreateCustomers(success=created, errors=errors)
 
 
 class CreateProduct(graphene.Mutation):
@@ -71,7 +67,7 @@ class CreateProduct(graphene.Mutation):
     def mutate(self, info, name, price, stock=0):
         if price <= 0:
             raise Exception("Price must be positive")
-        if stock <= 0:
+        if stock < 0:
             raise Exception("Stock cannot be negative")
 
         product = Product.objects.create(name=name, price=price, stock=stock)
@@ -93,7 +89,7 @@ class CreateOrder(graphene.Mutation):
             raise Exception("Customer not found")
 
         if not product_ids:
-            raise Exception("Select atleast a product")
+            raise Exception("Select at least one product")
 
         products = Product.objects.filter(id__in=product_ids)
         if products.count() != len(product_ids):
@@ -102,27 +98,51 @@ class CreateOrder(graphene.Mutation):
         total_amount = sum([p.price for p in products])
         order = Order.objects.create(
             customer=customer,
-            order_date=order_date or timezone.now(),
+            order_date=order_date or datetime.now(),
             total_amount=total_amount,
         )
         order.products.set(products)
         return CreateOrder(order=order)
 
+# ✅ NEW MUTATION: UpdateLowStockProducts
+class UpdateLowStockProducts(graphene.Mutation):
+    class Arguments:
+        pass  # No input needed
+
+    updated_products = graphene.List(ProductType)
+    message = graphene.String()
+
+    def mutate(self, info):
+        low_stock_products = Product.objects.filter(stock__lt=10)
+        updated_products = []
+
+        for product in low_stock_products:
+            product.stock += 10
+            product.save()
+            updated_products.append(product)
+
+        if updated_products:
+            msg = f"{len(updated_products)} product(s) restocked."
+        else:
+            msg = "No low-stock products found."
+
+        return UpdateLowStockProducts(updated_products=updated_products, message=msg)
+
+# -------------------- Mutations & Queries --------------------
 
 class Mutation(graphene.ObjectType):
     create_customer = CreateCustomer.Field()
     bulk_create_customers = CreateCustomers.Field()
     create_product = CreateProduct.Field()
     create_order = CreateOrder.Field()
+    update_low_stock_products = UpdateLowStockProducts.Field()  # ✅ Add new mutation here
 
 
 class Query(graphene.ObjectType):
     customers = graphene.List(CustomerType, filterset_class=CustomerFilter)
     customer = graphene.Field(CustomerType, id=graphene.Int(required=True))
-
     products = graphene.List(ProductType, filterset_class=ProductFilter)
     product = graphene.Field(ProductType, id=graphene.Int(required=True))
-
     orders = graphene.List(OrderType, filterset_class=OrderFilter)
     order = graphene.Field(OrderType, id=graphene.Int(required=True))
 
@@ -145,16 +165,11 @@ class Query(graphene.ObjectType):
             return None
 
     def resolve_orders(self, info):
-        return (
-            Order.objects.prefetch_related("products").select_related("customer").all()
-        )
+        return Order.objects.prefetch_related("products").select_related("customer").all()
 
     def resolve_order(self, info, id):
         try:
-            return (
-                Order.objects.select_related("customer")
-                .prefetch_related("products")
-                .get(pk=id)
-            )
+            return Order.objects.select_related("customer").prefetch_related("products").get(pk=id)
         except Order.DoesNotExist:
             return None
+
