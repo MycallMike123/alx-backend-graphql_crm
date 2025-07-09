@@ -3,3 +3,7 @@ django-filter
 Django
 djangorestframework
 django-crontab
+celery
+django-celery-beat
+gql
+requests
