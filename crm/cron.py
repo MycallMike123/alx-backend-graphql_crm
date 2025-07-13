@@ -1,4 +1,5 @@
 import logging
+import requests
 from datetime import datetime
 from gql import gql, Client
 from gql.transport.requests import RequestsHTTPTransport
@@ -44,7 +45,7 @@ def update_low_stock():
                     name
                     stock
                 }
-                message
+                success
             }
         }
         """)
@@ -52,10 +53,10 @@ def update_low_stock():
         result = client.execute(mutation)
         updates = result.get('updateLowStockProducts', {})
         products = updates.get('updatedProducts', [])
-        message = updates.get('message', '')
+        success_message = updates.get('success', '')
 
         with open(LOG_FILE_STOCK, 'a') as f:
-            f.write(f"{timestamp} {message}\n")
+            f.write(f"{timestamp} {success_message}\n")
             for p in products:
                 f.write(f"{timestamp} Product: {p['name']}, New Stock: {p['stock']}\n")
 
