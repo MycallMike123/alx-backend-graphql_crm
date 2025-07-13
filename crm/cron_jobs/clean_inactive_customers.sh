@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Activate virtual environment if needed
-# source /path/to/venv/bin/activate
+# Get the directory of this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Navigate to project root
-cd /absolute/path/to/your/django/project || exit 1
+# Navigate to the root of the Django project
+cd "$SCRIPT_DIR/../.." || exit 1
 
 # Get timestamp
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
